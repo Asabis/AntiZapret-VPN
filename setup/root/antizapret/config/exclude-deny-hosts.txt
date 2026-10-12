@@ -1,0 +1,5 @@
+# Operator-maintained allowlist of DNS domains excluded from final
+# AntiZapret (selective VPN) deny.rpz across every source.
+# This does NOT add domains to the selective VPN route list.
+# Format: one ASCII/Punycode domain per line (no wildcards).
+# Example: example.com

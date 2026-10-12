@@ -178,6 +178,14 @@ if [[ -z "$1" || "$1" == 'host' || "$1" == 'hosts' || "$1" == 'noclear' || "$1" 
 		sed 's/$/ CNAME rpz-passthru./; p; s/^/*./' result/exclude-adblock-hosts.txt >> temp/deny.rpz
 	fi
 	sed 's/\r//g; /^;/d; /^$/d' download/*deny-rpz.txt config/*deny-rpz.txt >> temp/deny.rpz
+	# GP-01: remove operator-allowlisted names from ALL deny sources before
+	# publishing the generated RPZ. Do not append RPZ passthru records:
+	# Knot must continue to proxy.rpz for Fake IP selective routing.
+	python3 ./rpz_allowlist.py \
+		--allowlist config/exclude-deny-hosts.txt \
+		--input temp/deny.rpz \
+		--output temp/deny-filtered.rpz
+	mv -f temp/deny-filtered.rpz temp/deny.rpz
 	cp temp/deny.rpz result/deny.rpz
 
 	if [[ "$VPN_ADBLOCK" == 'y' ]]; then
