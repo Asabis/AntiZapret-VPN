@@ -50,10 +50,11 @@ class RPZAllowlistTest(unittest.TestCase):
             "# DNS monitoring services\nipify.org\nwhatismyipaddress.com\n"
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        for record in ("ipify.org CNAME", "*.ipify.org CNAME",
-                       "api.ipify.org CNAME", "whatismyipaddress.com CNAME",
-                       "*.whatismyipaddress.com CNAME"):
-            self.assertNotIn(record, output)
+        owners = [line.split()[0] for line in output.splitlines()
+                  if " CNAME " in line]
+        for domain in ("ipify.org", "*.ipify.org", "api.ipify.org",
+                       "whatismyipaddress.com", "*.whatismyipaddress.com"):
+            self.assertNotIn(domain, owners)
         for record in ("example.net CNAME .", "*.example.net CNAME .",
                        "notipify.org CNAME .", "ipify.org.evil.test CNAME .",
                        "whatismyipaddress.net CNAME ."):
@@ -73,11 +74,12 @@ class RPZAllowlistTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(output, RPZ)
 
-    def test_subdomain_only_does_not_disable_parent(self):
-        proc, output = self.invoke("api.ipify.org\n")
+    def test_subdomain_only_preserves_parent_exact_rule(self):
+        # No blocking parent wildcard: it is safe to remove only the child.
+        proc, output = self.invoke("api.ipify.org\n",
+                                   "ipify.org CNAME .\napi.ipify.org CNAME .\n")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("ipify.org CNAME .", output)
-        self.assertNotIn("api.ipify.org CNAME .", output)
+        self.assertEqual(output, "ipify.org CNAME .\n")
 
     def test_invalid_allowlist_fails_without_overwriting(self):
         for invalid in ("*.ipify.org\n", "com\n", "bad..example.com\n", "../danger\n"):
