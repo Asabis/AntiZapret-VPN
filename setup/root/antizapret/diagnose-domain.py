@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnose AntiZapret DNS -> RPZ -> Fake IP -> NAT -> generated routes.
+"""Diagnose AntiZapret DNS -> RPZ -> Fake IP -> NAT -> active CCD routes.
 
 Read-only for configuration/firewall. An ordinary DNS query can populate
 resolver caches and allocate Fake IP mappings in the existing DNS sidecar.
@@ -179,7 +179,7 @@ def compare_generated(active, generated):
     return filecmp.cmp(active, generated, shallow=False)
 
 
-def diagnose(domain, resolver, rpz_dir, root, fake_network, timeout):
+def diagnose(domain, resolver, rpz_dir, root, fake_network, timeout, ccd_file=None):
     report = {
         "schema_version": 1,
         "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -189,6 +189,8 @@ def diagnose(domain, resolver, rpz_dir, root, fake_network, timeout):
         "rpz": {},
         "nat": {},
         "generated_routes": {},
+        "active_routes": {},
+        "routes_in_sync": None,
         "rpz_in_sync": None,
         "errors": [],
         "warnings": [],
@@ -237,13 +239,36 @@ def diagnose(domain, resolver, rpz_dir, root, fake_network, timeout):
     else:
         report["nat"] = {"mappings": {}, "error": None}
 
-    report["generated_routes"] = read_routes(root / "result" / "DEFAULT", fake)
+    # parse.sh hosts deletes/rebuilds result/ without regenerating DEFAULT.
+    # The live OpenVPN CCD file is the primary evidence for pushed routes.
+    # Do not mark a working exit as degraded just because a temporary
+    # generated file is absent after a DNS-only regeneration.
+    live_ccd = ccd_file if ccd_file is not None else Path("/etc/openvpn/server/ccd/DEFAULT")
+    generated_ccd = root / "result" / "DEFAULT"
+    report["active_routes"] = read_routes(live_ccd, fake)
+    report["generated_routes"] = read_routes(generated_ccd, fake)
+    report["routes_in_sync"] = compare_generated(live_ccd, generated_ccd)
     if fake:
-        route_info = report["generated_routes"]
-        if not route_info["present"]:
-            report["warnings"].append("Generated OpenVPN CCD DEFAULT route file missing")
-        elif any(not value for value in route_info["coverage"].values()):
-            report["warnings"].append("Generated OpenVPN routes do not cover some Fake IPs")
+        live_info = report["active_routes"]
+        if not live_info["present"]:
+            report["warnings"].append(
+                "Active OpenVPN CCD DEFAULT route file not found; "
+                "server may use another CCD directory or client-local routes"
+            )
+        elif any(not covered for covered in live_info["coverage"].values()):
+            report["warnings"].append(
+                "Active OpenVPN CCD DEFAULT does not cover some Fake IPs; "
+                "client-local routes may still cover them"
+            )
+        if report["routes_in_sync"] is False:
+            report["warnings"].append(
+                "Generated and active OpenVPN CCD DEFAULT differ; check which is in use"
+            )
+        elif not report["generated_routes"]["present"]:
+            report["notes"].append(
+                "Generated result/DEFAULT absent after hosts-only parse; "
+                "checked active OpenVPN CCD instead"
+            )
 
     if real and not fake:
         report["notes"].append(
@@ -281,8 +306,15 @@ def format_human(report):
         ))
     if report["nat"]["error"]:
         lines.append("NAT inspection: " + report["nat"]["error"])
-    coverage = report["generated_routes"]["coverage"]
-    for ip, present in coverage.items():
+    live = report["active_routes"]
+    lines.append("Active OpenVPN CCD: " + live["path"] +
+                 (" (present)" if live["present"] else " (not found)"))
+    for ip, present in live["coverage"].items():
+        lines.append(f"Active OpenVPN CCD route for {ip}: {'yes' if present else 'NO'}")
+    generated = report["generated_routes"]
+    lines.append("Generated OpenVPN CCD: " + generated["path"] +
+                 (" (present)" if generated["present"] else " (not found)"))
+    for ip, present in generated["coverage"].items():
         lines.append(f"Generated OpenVPN route for {ip}: {'yes' if present else 'NO'}")
     for field in ("errors", "warnings", "notes"):
         for message in report[field]:
@@ -296,6 +328,9 @@ def main():
     cli.add_argument("--resolver", default="127.1.1.1", help="Exit Knot listener")
     cli.add_argument("--rpz-dir", type=Path, default=Path("/etc/knot-resolver"))
     cli.add_argument("--root", type=Path, default=Path("/root/antizapret"))
+    cli.add_argument("--ccd-file", type=Path,
+                     default=Path("/etc/openvpn/server/ccd/DEFAULT"),
+                     help="Active OpenVPN CCD DEFAULT (verify server actually uses it)")
     cli.add_argument("--fake-cidr", default="198.18.0.0/15")
     cli.add_argument("--timeout", type=float, default=8.0)
     cli.add_argument("--json", action="store_true")
@@ -309,7 +344,8 @@ def main():
     except ValueError as exc:
         cli.error(str(exc))
     report = diagnose(
-        domain, resolver, args.rpz_dir, args.root, network, args.timeout
+        domain, resolver, args.rpz_dir, args.root, network, args.timeout,
+        ccd_file=args.ccd_file,
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
