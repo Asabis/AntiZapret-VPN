@@ -17,6 +17,6 @@ jobs:
       - name: Shell syntax
         run: bash -n setup/root/antizapret/parse.sh
       - name: Python syntax
-        run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py
+        run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py setup/root/antizapret/diagnose-domain.py
       - name: RPZ allowlist regression
         run: python3 -m unittest discover -s tests -v
