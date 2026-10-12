@@ -1,0 +1,22 @@
+name: policy-ci
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rpz-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n setup/root/antizapret/parse.sh
+      - name: Python syntax
+        run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py
+      - name: RPZ allowlist regression
+        run: python3 -m unittest discover -s tests -v
