@@ -82,6 +82,11 @@ class DomainDiagnosticsTest(unittest.TestCase):
             (root / "result" / "DEFAULT").write_text(
                 'push "route 198.18.0.0 255.254.0.0"\n'
             )
+            live_ccd = Path(directory) / "ccd" / "DEFAULT"
+            live_ccd.parent.mkdir()
+            live_ccd.write_text(
+                'push "route 198.18.0.0 255.254.0.0"\n'
+            )
             for name in ("deny.rpz", "proxy.rpz", "warp.rpz"):
                 (rpz / name).write_text("@ SOA . . (1 1 1 1 10800)\n")
             (root / "result" / "deny.rpz").write_text(
@@ -94,7 +99,8 @@ class DomainDiagnosticsTest(unittest.TestCase):
                 {"198.18.133.123": [{"destination": "172.64.149.12",
                                     "match": "198.18.133.123/32"}]}, None
             )):
-                report = mod.diagnose("github.com", "127.1.1.1", rpz, root, network, 8)
+                report = mod.diagnose("github.com", "127.1.1.1", rpz, root, network, 8,
+                                      ccd_file=live_ccd)
                 self.assertEqual(report["status"], "ok", report)
                 self.assertTrue(report["generated_routes"]["coverage"]["198.18.133.123"])
                 self.assertTrue(report["rpz_in_sync"])
@@ -103,7 +109,8 @@ class DomainDiagnosticsTest(unittest.TestCase):
             )), patch.object(mod, "read_nat", return_value=(
                 {"198.18.133.123": []}, None
             )):
-                report = mod.diagnose("github.com", "127.1.1.1", rpz, root, network, 8)
+                report = mod.diagnose("github.com", "127.1.1.1", rpz, root, network, 8,
+                                      ccd_file=live_ccd)
                 self.assertEqual(report["status"], "issue")
                 self.assertIn("no matching DNAT", report["errors"][0])
             with patch.object(mod, "read_dns", return_value=(
@@ -128,6 +135,84 @@ class DomainDiagnosticsTest(unittest.TestCase):
                 self.assertEqual(report["status"], "review")
                 self.assertEqual(report["errors"], [])
                 self.assertTrue(any("Cannot inspect NAT" in w for w in report["warnings"]))
+
+    def test_hosts_only_parse_deleted_generated_but_active_ccd_works(self):
+        with tempfile.TemporaryDirectory() as d:
+            root, rpz = Path(d) / "root", Path(d) / "knot"
+            (root / "result").mkdir(parents=True)
+            rpz.mkdir()
+            for name in ("deny.rpz", "proxy.rpz", "warp.rpz"):
+                (rpz / name).write_text("@ SOA . . (1 1 1 1 10800)\n")
+            (root / "result" / "deny.rpz").write_text(
+                "@ SOA . . (1 1 1 1 10800)\n"
+            )
+            active = Path(d) / "ccd" / "DEFAULT"
+            active.parent.mkdir()
+            active.write_text('push "route 198.18.0.0 255.254.0.0"\n')
+            fake = "198.19.36.158"
+            with patch.object(mod, "read_dns", return_value=([fake], [], None)), \
+                 patch.object(mod, "read_nat", return_value=({
+                     fake: [{"destination": "104.26.13.205", "match": fake + "/32"}]
+                 }, None)):
+                report = mod.diagnose(
+                    "api.ipify.org", "127.1.1.1", rpz, root,
+                    ipaddress.ip_network("198.18.0.0/15"), 8, ccd_file=active
+                )
+            self.assertEqual(report["status"], "ok", report)
+            self.assertFalse(report["generated_routes"]["present"])
+            self.assertTrue(report["active_routes"]["coverage"][fake])
+            self.assertTrue(any("hosts-only" in note for note in report["notes"]))
+
+    def test_missing_active_ccd_with_only_generated_is_review(self):
+        with tempfile.TemporaryDirectory() as d:
+            root, rpz = Path(d) / "root", Path(d) / "knot"
+            (root / "result").mkdir(parents=True)
+            (root / "result" / "DEFAULT").write_text(
+                'push "route 198.18.0.0 255.254.0.0"\n'
+            )
+            rpz.mkdir()
+            for name in ("deny.rpz", "proxy.rpz", "warp.rpz"):
+                (rpz / name).write_text("@ SOA . . (1 1 1 1 10800)\n")
+            (root / "result" / "deny.rpz").write_text(
+                "@ SOA . . (1 1 1 1 10800)\n"
+            )
+            fake = "198.18.137.67"
+            with patch.object(mod, "read_dns", return_value=([fake], [], None)), \
+                 patch.object(mod, "read_nat", return_value=({
+                     fake: [{"destination": "140.82.121.4", "match": fake + "/32"}]
+                 }, None)):
+                report = mod.diagnose(
+                    "github.com", "127.1.1.1", rpz, root,
+                    ipaddress.ip_network("198.18.0.0/15"), 8,
+                    ccd_file=Path(d) / "missing-ccd"
+                )
+            self.assertEqual(report["status"], "review", report)
+            self.assertTrue(any("Active OpenVPN CCD" in x for x in report["warnings"]))
+
+    def test_active_ccd_without_fake_route_is_review(self):
+        with tempfile.TemporaryDirectory() as d:
+            root, rpz = Path(d) / "root", Path(d) / "knot"
+            (root / "result").mkdir(parents=True)
+            rpz.mkdir()
+            for name in ("deny.rpz", "proxy.rpz", "warp.rpz"):
+                (rpz / name).write_text("@ SOA . . (1 1 1 1 10800)\n")
+            (root / "result" / "deny.rpz").write_text(
+                "@ SOA . . (1 1 1 1 10800)\n"
+            )
+            active = Path(d) / "ccd" / "DEFAULT"
+            active.parent.mkdir()
+            active.write_text('push "route 172.29.0.0 255.255.0.0"\n')
+            fake = "198.18.137.67"
+            with patch.object(mod, "read_dns", return_value=([fake], [], None)), \
+                 patch.object(mod, "read_nat", return_value=({
+                     fake: [{"destination": "140.82.121.4", "match": fake + "/32"}]
+                 }, None)):
+                report = mod.diagnose(
+                    "github.com", "127.1.1.1", rpz, root,
+                    ipaddress.ip_network("198.18.0.0/15"), 8, ccd_file=active
+                )
+            self.assertEqual(report["status"], "review", report)
+            self.assertTrue(any("does not cover" in x for x in report["warnings"]))
 
 
 if __name__ == "__main__":
