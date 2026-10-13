@@ -15,8 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
-        run: bash -n setup/root/antizapret/parse.sh
+        run: bash -n setup/root/antizapret/parse.sh setup/root/antizapret/up.sh setup/root/antizapret/down.sh
       - name: Python syntax
-        run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py setup/root/antizapret/diagnose-domain.py
+        run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py setup/root/antizapret/diagnose-domain.py setup/root/antizapret/forward_bypass_clients.py
       - name: RPZ allowlist regression
         run: python3 -m unittest discover -s tests -v

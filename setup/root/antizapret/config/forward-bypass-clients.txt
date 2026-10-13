@@ -1,0 +1,7 @@
+# Optional selective-VPN client egress exception.
+# One VPN client IPv4 per line, e.g.: 172.29.0.3/32
+# Only addresses within the selected AntiZapret OpenVPN /21 are accepted.
+#
+# Intentionally empty by default. Listing a client allows its ordinary
+# destinations to egress through DE when its router sends them into OpenVPN.
+# This is a compatibility workaround, NOT true selective routing.

@@ -202,7 +202,16 @@ if [[ "$RESTRICT_FORWARD" == 'y' ]]; then
 			done < result/forward-ips.txt
 		fi
 	} | ipset restore
-	iptables -w -I FORWARD 2 -s $IP.29.0.0/16 -m connmark --mark 0x1 -m set ! --match-set antizapret-forward dst -j DROP
+		# Only explicitly listed selective clients may use ordinary public IPs via the exit.
+	# This is NOT an ACCEPT rule: torrent/drop/isolation/INVALID guards still apply.
+	# Empty allowlist retains the existing RESTRICT_FORWARD behavior for every client.
+	forward_bypass_rules="$(python3 ./forward_bypass_clients.py "$IP" config/forward-bypass-clients.txt)"
+	{
+		echo 'create antizapret-bypass hash:ip -exist'
+		echo 'flush antizapret-bypass'
+		[[ -z "$forward_bypass_rules" ]] || printf '%s\n' "$forward_bypass_rules"
+	} | ipset restore
+	iptables -w -I FORWARD 2 -s $IP.29.0.0/16 -m connmark --mark 0x1 -m set ! --match-set antizapret-forward dst -m set ! --match-set antizapret-bypass src -j DROP
 fi
 # Drop forwarding
 {

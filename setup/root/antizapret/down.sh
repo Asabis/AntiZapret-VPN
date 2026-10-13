@@ -75,6 +75,9 @@ iptables -w -D FORWARD -s $IP.28.0.0/16 -p udp -m string --string 'BitTorrent pr
 iptables -w -D FORWARD -s $IP.28.0.0/16 -p udp -m string --string 'd1:ad2:id20:' --algo kmp --to 100 -j SET --add-set antizapret-torrent src --exist
 iptables -w -D FORWARD -s $IP.28.0.0/16 -m set --match-set antizapret-torrent src -j DROP
 # Restrict forwarding
+# Remove the allowlist-aware restrict rule (new version).
+iptables -w -D FORWARD -s $IP.29.0.0/16 -m connmark --mark 0x1 -m set ! --match-set antizapret-forward dst -m set ! --match-set antizapret-bypass src -j DROP
+# Remove the pre-migration restrict rule as well, if present.
 iptables -w -D FORWARD -s $IP.29.0.0/16 -m connmark --mark 0x1 -m set ! --match-set antizapret-forward dst -j DROP
 # Drop forwarding
 iptables -w -D FORWARD -s $IP.28.0.0/15 -m set --match-set antizapret-drop dst -j DROP
