@@ -38,6 +38,24 @@ would still match an allowed child (for example, allowing api.example.com
 while *.example.com is denied). Do not silently remove broad parent rules:
 review the intended security policy instead.
 
+## Scheduled update provenance (release gate)
+
+The upstream `update.sh` downloads both `update.sh` and `parse.sh` on
+each scheduled `doall.sh` run. If those URLs point to `GubernievS`, the
+GP-01 parser hook can be overwritten during the daily update, silently
+reintroducing blocked domains. This fork pins both script URLs to
+`Asabis/AntiZapret-VPN/main` to preserve its allowlist integration.
+Downloaded domain/IP and deny-source lists still use the upstream.
+
+**Production is not automatically changed by this repository commit.**
+Before enabling unattended updates, back up actual DE scripts, compare local
+customizations, deploy the fork `update.sh` and `parse.sh` from one
+reviewed commit, run two consecutive update+parse cycles under an exclusive
+lock, verify the RPZ allowlist and confirm no unexpected side effects.
+Any newly fetched parser must be verified after the update. Coordinate all
+`parse.sh` writers with AZPanel DE agent's shared lock before permitting
+unattended policy publication.
+
 ## Deployment on the existing DE exit
 
 **Before touching production:** record a Git revision of both repositories,
