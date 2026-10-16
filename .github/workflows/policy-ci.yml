@@ -15,7 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
-        run: bash -n setup/root/antizapret/parse.sh
+        run: |
+          bash -n setup/root/antizapret/parse.sh
+          bash -n setup/root/antizapret/update.sh
+          grep -Fqx 'UPDATE_LINK=https://raw.githubusercontent.com/Asabis/AntiZapret-VPN/main/setup/root/antizapret/update.sh' setup/root/antizapret/update.sh
+          grep -Fqx 'PARSE_LINK=https://raw.githubusercontent.com/Asabis/AntiZapret-VPN/main/setup/root/antizapret/parse.sh' setup/root/antizapret/update.sh
       - name: Python syntax
         run: python3 -m py_compile setup/root/antizapret/rpz_allowlist.py setup/root/antizapret/diagnose-domain.py
       - name: RPZ allowlist regression
